@@ -29,7 +29,7 @@ from rich.markdown import Markdown
 # ==========================================================
 
 MODEL_NAME = "gemini-2.5-flash"
-GEMINI_API_KEY = "AIzaSyDswVSxBDhC4LdPmhKVrFLDfuQNbRCDem0"
+GEMINI_API_KEY = "<API_KEYS>"
 
 console = Console()
 
@@ -338,4 +338,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()
