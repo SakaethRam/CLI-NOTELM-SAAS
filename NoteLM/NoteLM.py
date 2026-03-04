@@ -23,16 +23,18 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.markdown import Markdown
 
+from gtts import gTTS
+import pygame
+
 
 # ==========================================================
 # CONFIGURATION
 # ==========================================================
 
 MODEL_NAME = "gemini-2.5-flash"
-GEMINI_API_KEY = "<API_KEYS>"
+GEMINI_API_KEY = "<API_KEY>"
 
 console = Console()
-
 DB_NAME = "NoteLM.db"
 
 
@@ -43,8 +45,6 @@ DB_NAME = "NoteLM.db"
 def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-
-    # answer TEXT NOT NULL - FOR ANSWER COLUMN
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS notes (
@@ -64,8 +64,6 @@ def init_db():
 def save_to_db(data, pdf_filename):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-
-    # data["answer"] & ADD A '?' IN VALUES: TO CREATE A COLUMN FOR GENERATED CONTENT
 
     cursor.execute("""
         INSERT INTO notes (
@@ -108,11 +106,57 @@ def next_sequence():
 
 
 # ==========================================================
-# INLINE MARKDOWN CLEANING
+# CLEAN TEXT FOR TTS
+# ==========================================================
+
+def clean_for_tts(text):
+    text = re.sub(r"\*\*|\*|`|#", "", text)
+    text = re.sub(r"\n+", ". ", text)
+    return text
+
+
+# ==========================================================
+# AUDIO PLAYBACK (PLAY / PAUSE / STOP)
+# ==========================================================
+
+class AudioPlayer:
+    def __init__(self):
+        pygame.mixer.init()
+        self.is_paused = False
+        self.is_playing = False
+        self.audio_file = "notelm_response.mp3"
+
+    def generate_audio(self, text):
+        cleaned = clean_for_tts(text)
+        tts = gTTS(text=cleaned)
+        tts.save(self.audio_file)
+
+    def play(self):
+        if not self.is_playing:
+            pygame.mixer.music.load(self.audio_file)
+            pygame.mixer.music.play()
+            self.is_playing = True
+            self.is_paused = False
+        elif self.is_paused:
+            pygame.mixer.music.unpause()
+            self.is_paused = False
+
+    def pause(self):
+        if self.is_playing and not self.is_paused:
+            pygame.mixer.music.pause()
+            self.is_paused = True
+
+    def stop(self):
+        pygame.mixer.music.stop()
+        self.is_playing = False
+        self.is_paused = False
+
+
+# ==========================================================
+# INLINE MARKDOWN CLEANING (PDF)
 # ==========================================================
 
 def clean_for_pdf(text):
-
     text = re.sub(r"\*\*\*(.*?)\*\*\*", r"<b><i>\1</i></b>", text)
     text = re.sub(r"\*\*(.*?)\*\*", r"<b>\1</b>", text)
     text = re.sub(r"(?<!\*)\*(?!\s)(.*?)\*(?!\*)", r"<i>\1</i>", text)
@@ -128,14 +172,11 @@ def clean_for_pdf(text):
 
 
 # ==========================================================
-# STRUCTURED MARKDOWN → PDF RENDERER
+# MARKDOWN → PDF RENDERER
 # ==========================================================
 
 def render_markdown_to_pdf(text, elements, body_style):
-
     lines = text.split("\n")
-    table_buffer = []
-    in_table = False
 
     for line in lines:
         stripped = line.strip()
@@ -146,50 +187,9 @@ def render_markdown_to_pdf(text, elements, body_style):
             elements.append(Spacer(1, 0.2 * inch))
             continue
 
-        if stripped.startswith("|") and stripped.endswith("|"):
-            in_table = True
-
-            if re.match(r"^\|\s*-+", stripped):
-                continue
-
-            row = [cell.strip() for cell in stripped.strip("|").split("|")]
-            table_buffer.append(row)
-            continue
-        else:
-            if in_table and table_buffer:
-                table = Table(table_buffer, hAlign="LEFT")
-
-                table.setStyle(TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                    ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 11),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-                ]))
-
-                elements.append(Spacer(1, 0.2 * inch))
-                elements.append(table)
-                elements.append(Spacer(1, 0.3 * inch))
-
-                table_buffer = []
-                in_table = False
-
         if stripped != "":
             elements.append(Paragraph(clean_for_pdf(stripped), body_style))
             elements.append(Spacer(1, 0.12 * inch))
-
-    if table_buffer:
-        table = Table(table_buffer, hAlign="LEFT")
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-            ("FONTNAME", (0, 0), (-1, -1), "Times-Roman"),
-            ("FONTSIZE", (0, 0), (-1, -1), 11),
-        ]))
-        elements.append(table)
 
 
 # ==========================================================
@@ -210,7 +210,7 @@ def call_gemini(question):
     return {
         "question": question,
         "answer": answer,
-        "model": "NoteLM v1.1.0", # MODEL_NAME
+        "model": "NoteLM v1.1.0",
         "generated_at": timestamp(),
         "latency": latency
     }
@@ -218,6 +218,10 @@ def call_gemini(question):
 
 # ==========================================================
 # PDF GENERATION
+# ==========================================================
+
+# ==========================================================
+# PDF GENERATION (WITH METADATA)
 # ==========================================================
 
 def generate_user_pdf(data, filename):
@@ -237,7 +241,6 @@ def generate_user_pdf(data, filename):
         name="TitleStyle",
         fontName="Times-Bold",
         fontSize=22,
-        leading=26,
         alignment=1,
         spaceAfter=18
     )
@@ -245,70 +248,66 @@ def generate_user_pdf(data, filename):
     section_style = ParagraphStyle(
         name="SectionStyle",
         fontName="Times-Bold",
-        fontSize=15,
-        leading=18,
+        fontSize=14,
         spaceBefore=18,
-        spaceAfter=6
+        spaceAfter=8
     )
 
     body_style = ParagraphStyle(
         name="BodyStyle",
         fontName="Times-Roman",
         fontSize=12,
-        leading=18,
-        spaceAfter=6
+        leading=18
     )
 
     metadata_label_style = ParagraphStyle(
         name="MetaLabel",
         fontName="Times-Bold",
-        fontSize=11,
-        spaceAfter=2
+        fontSize=11
     )
 
     metadata_value_style = ParagraphStyle(
         name="MetaValue",
         fontName="Times-Roman",
         fontSize=11,
-        textColor=colors.grey,
-        spaceAfter=6
+        textColor=colors.grey
     )
 
+    # TITLE
     elements.append(Paragraph("NOTELM NOTEBOOK GPT", title_style))
     elements.append(HRFlowable(width="100%", thickness=1, color=colors.black))
     elements.append(Spacer(1, 0.4 * inch))
 
+    # QUESTION
     elements.append(Paragraph("Question", section_style))
-    elements.append(Spacer(1, 0.2 * inch))
-
     render_markdown_to_pdf(data["question"], elements, body_style)
 
     elements.append(Spacer(1, 0.3 * inch))
 
+    # RESPONSE
     elements.append(Paragraph("NoteLM Generated Response", section_style))
-    elements.append(Spacer(1, 0.2 * inch))
-
     render_markdown_to_pdf(data["answer"], elements, body_style)
 
     elements.append(Spacer(1, 0.5 * inch))
-
     elements.append(HRFlowable(width="100%", thickness=0.6, color=colors.grey))
     elements.append(Spacer(1, 0.3 * inch))
 
+    # METADATA
     elements.append(Paragraph("Metadata", section_style))
-    elements.append(Spacer(1, 0.15 * inch))
+    elements.append(Spacer(1, 0.2 * inch))
 
     elements.append(Paragraph("Model Used:", metadata_label_style))
     elements.append(Paragraph(data["model"], metadata_value_style))
+    elements.append(Spacer(1, 0.1 * inch))
 
     elements.append(Paragraph("Generated At:", metadata_label_style))
     elements.append(Paragraph(data["generated_at"], metadata_value_style))
+    elements.append(Spacer(1, 0.1 * inch))
 
     elements.append(Paragraph("API Latency:", metadata_label_style))
     elements.append(Paragraph(f"{data['latency']} seconds", metadata_value_style))
 
     doc.build(elements)
-
 
 # ==========================================================
 # MAIN
@@ -318,25 +317,49 @@ def main():
 
     init_db()
 
-    console.print(Panel("NoteLM: Terminal Notebook Software", title="NoteLM"))
+    console.print(Panel("NoteLM Ai: Terminal Notebook Software", title="NoteLM"))
 
     question = Prompt.ask("\nYour Question")
 
-    with console.status("Generating response from NoteLM..."):
+    with console.status("NoteLM Is Cooking Data..."):
         result = call_gemini(question)
 
     console.print(Panel(Markdown(result["answer"]), title="AI Response Preview"))
+
+    # ---------------- AUDIO SECTION ----------------
+
+    audio_player = AudioPlayer()
+    audio_player.generate_audio(result["answer"])
+
+    console.print("\nAudio Notes:")
+    console.print("P → Play")
+    console.print("Enter → Pause")
+    console.print("S → Stop")
+    console.print("Q → Continue to PDF\n")
+
+    while True:
+        key = Prompt.ask("Command").lower()
+
+        if key == "p":
+            audio_player.play()
+        elif key == "":
+            audio_player.pause()
+        elif key == "s":
+            audio_player.stop()
+        elif key == "q":
+            audio_player.stop()
+            break
+
+    # ---------------- PDF SECTION ----------------
 
     sequence = next_sequence()
     filename = f"USER_NOTELM{sequence}.pdf"
 
     generate_user_pdf(result, filename)
-
     save_to_db(result, filename)
 
     console.print(f"\nSaved successfully as: {filename}")
 
 
 if __name__ == "__main__":
-
     main()
