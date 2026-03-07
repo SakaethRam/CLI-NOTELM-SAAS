@@ -1,4 +1,4 @@
-# NoteLM Ai: Turn Questions Into Structured Knowledge Instantly.
+# NoteLM Ai: Turn Questions Into Structured Knowledge Instantly. [</>](https://notelm-ai.netlify.app)
 
 NoteLM transforms raw prompts into clean, well-structured, and export-ready notes with intelligent formatting and built-in metadata tracking. It preserves context, enhances clarity, and ensures every note remains organized and traceable. 
 Designed for reliability, it also provides secure storage so your information stays protected and easily accessible whenever you need it.
