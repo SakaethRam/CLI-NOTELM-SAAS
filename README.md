@@ -5,7 +5,7 @@ Designed for reliability, it also provides secure storage so your information st
 
 >*NOTE: Move the **NoteLM AI** `.py` folder to a separate folder in your `<username>` directory. This helps maintain a clean separation between the NoteLM AI Python setup and the SaaS setup experience.
 
-# [Visit NoteLM Ai](https://notelm-ai.netlify.app)
+## [Visit: NoteLM Ai](https://notelm-ai.netlify.app)
 
 <img width="1536" height="1024" alt="NoteLM Ai #Light" src="https://github.com/user-attachments/assets/0798a099-8dea-48d1-bc0b-ae17508f42fe" />
 
